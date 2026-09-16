@@ -24,21 +24,42 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Node Dependencies
-        run: npm install
-
-      - name: Initialize Android Platform
+      - name: Ensure Project Structure
         run: |
+          mkdir -p www
+          if [ ! -f www/index.html ] && [ -f index.html ]; then
+            cp index.html www/index.html
+          fi
+
+      - name: Install Dependencies
+        run: |
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      - name: Initialize Android
+        run: |
+          npx cap init "MGE Scanner Pro" "com.mge.scannerpro" --web-dir "www"
           npx cap add android
-          npx cap copy android
+          npx cap sync android
 
-      - name: Grant Camera Permissions in Manifest
+      - name: Inject Camera Permissions
         run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />\n    <uses-permission android:name="android.permission.FLASHLIGHT" />' "$MANIFEST"
+          node -e '
+            const fs = require("fs");
+            const file = "android/app/src/main/AndroidManifest.xml";
+            if (fs.existsSync(file)) {
+              let xml = fs.readFileSync(file, "utf8");
+              const perms = `
+                  <uses-permission android:name="android.permission.CAMERA" />
+                  <uses-feature android:name="android.hardware.camera" android:required="false" />
+                  <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+                  <uses-permission android:name="android.permission.FLASHLIGHT" />
+              `;
+              if (!xml.includes("android.permission.CAMERA")) {
+                xml = xml.replace("</manifest>", perms + "\n</manifest>");
+                fs.writeFileSync(file, xml);
+              }
+            }
+          '
 
       - name: Build Debug APK
         run: |
@@ -46,7 +67,7 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug
 
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MGE-Scanner-Pro-APK
