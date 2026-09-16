@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1f2a">
+  <title>MGE Scanner</title>
+  <style>
+    :root { color-scheme: dark; --ink:#e8f2f2; --muted:#9ab0b4; --panel:#102d38; --line:#26515a; --accent:#f4b942; --green:#49d49d; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:radial-gradient(circle at 15% 0%, #184654 0, #0b1f2a 42%, #07141c 100%); color:var(--ink); font-family: Georgia, 'Times New Roman', serif; }
+    main { width:min(100% - 32px, 620px); margin:auto; padding:28px 0 40px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:28px; }
+    .brand { display:flex; align-items:center; gap:12px; }
+    .mark { display:grid; place-items:center; width:44px; height:44px; border:1px solid var(--accent); color:var(--accent); font:700 20px Georgia; }
+    h1 { margin:0; font-size:clamp(26px, 7vw, 38px); letter-spacing:.02em; }
+    .eyebrow { margin:3px 0 0; color:var(--muted); font:12px Arial, sans-serif; letter-spacing:.16em; text-transform:uppercase; }
+    .status { color:var(--green); font:12px Arial, sans-serif; white-space:nowrap; }
+    .scanner { position:relative; overflow:hidden; min-height:300px; border:1px solid var(--line); background:#061017; }
+    video { display:block; width:100%; min-height:300px; object-fit:cover; opacity:.8; }
+    .scan-frame { position:absolute; inset:17% 12%; border:2px solid var(--accent); box-shadow:0 0 0 999px #06101755; pointer-events:none; }
+    .scan-frame::after { content:''; position:absolute; inset:50% 0 auto; height:2px; background:var(--accent); box-shadow:0 0 12px var(--accent); animation:scan 2.4s ease-in-out infinite; }
+    @keyframes scan { 0%,100% { transform:translateY(-110px); } 50% { transform:translateY(110px); } }
+    .placeholder { position:absolute; inset:0; display:grid; place-items:center; padding:28px; text-align:center; color:var(--muted); font:15px Arial, sans-serif; }
+    .controls { display:flex; gap:10px; margin:14px 0 24px; }
+    button, input { min-height:48px; border:1px solid var(--line); font:16px Arial, sans-serif; }
+    button { padding:0 18px; color:#07141c; background:var(--accent); cursor:pointer; font-weight:700; }
+    button.secondary { color:var(--ink); background:transparent; }
+    input { flex:1; min-width:0; padding:0 14px; color:var(--ink); background:var(--panel); direction:ltr; text-align:left; }
+    section { border-top:1px solid var(--line); padding-top:20px; }
+    .section-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    h2 { margin:0; font-size:18px; }
+    #count { color:var(--muted); font:13px Arial, sans-serif; }
+    #history { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+    .item { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:13px 14px; background:#102d38aa; border-right:3px solid var(--green); font:14px Arial, sans-serif; }
+    .item time { color:var(--muted); font-size:12px; }
+    .empty { color:var(--muted); font:14px Arial, sans-serif; }
+    @media (max-width:420px) { main { width:min(100% - 22px, 620px); padding-top:18px; } .controls { flex-wrap:wrap; } .controls input { flex-basis:100%; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand"><div class="mark">M</div><div><h1>MGE Scanner</h1><p class="eyebrow">Inventory intelligence</p></div></div>
+      <span id="status" class="status">جاهز</span>
+    </header>
+    <div class="scanner">
+      <video id="camera" playsinline muted></video>
+      <div class="scan-frame" aria-hidden="true"></div>
+      <div id="placeholder" class="placeholder">اضغط «بدء الكاميرا» لمسح الباركود</div>
+    </div>
+    <div class="controls">
+      <input id="manual" type="text" inputmode="numeric" placeholder="أدخل الرمز يدويًا" aria-label="الرمز يدويًا">
+      <button id="add">إضافة</button>
+      <button id="start" class="secondary">بدء الكاميرا</button>
+    </div>
+    <section>
+      <div class="section-title"><h2>السجل الأخير</h2><span id="count">0 عناصر</span></div>
+      <ul id="history"><li class="empty">لم تتم إضافة رموز بعد.</li></ul>
+    </section>
+  </main>
+  <script>
+    const video = document.querySelector('#camera');
+    const placeholder = document.querySelector('#placeholder');
+    const status = document.querySelector('#status');
+    const input = document.querySelector('#manual');
+    const history = document.querySelector('#history');
+    const count = document.querySelector('#count');
+    const saved = JSON.parse(localStorage.getItem('mge-scans') || '[]');
+    let detector;
+    let stream;
+    let scanning = false;
+
+    function render() {
+      history.innerHTML = saved.length ? saved.map(item => `<li class="item"><b dir="ltr">${item.code}</b><time>${item.time}</time></li>`).join('') : '<li class="empty">لم تتم إضافة رموز بعد.</li>';
+      count.textContent = `${saved.length} عناصر`;
+    }
+    function addCode(code) {
+      const value = String(code || '').trim();
+      if (!value) return;
+      saved.unshift({ code: value, time: new Date().toLocaleTimeString('ar', { hour:'2-digit', minute:'2-digit' }) });
+      localStorage.setItem('mge-scans', JSON.stringify(saved.slice(0, 50)));
+      input.value = '';
+      render();
+      status.textContent = 'تمت الإضافة';
+    }
+    async function scan() {
+      if (!scanning || !detector) return;
+      try {
+        const codes = await detector.detect(video);
+        if (codes[0]?.rawValue) addCode(codes[0].rawValue);
+      } catch (error) { status.textContent = 'تعذر قراءة الصورة'; }
+      requestAnimationFrame(scan);
+    }
+    document.querySelector('#add').addEventListener('click', () => addCode(input.value));
+    input.addEventListener('keydown', event => { if (event.key === 'Enter') addCode(input.value); });
+    document.querySelector('#start').addEventListener('click', async event => {
+      if (scanning) { stream?.getTracks().forEach(track => track.stop()); scanning = false; event.target.textContent = 'بدء الكاميرا'; status.textContent = 'متوقف'; return; }
+      if (!('BarcodeDetector' in window)) { status.textContent = 'استخدم الإدخال اليدوي'; placeholder.textContent = 'المتصفح لا يدعم قراءة الباركود؛ أدخل الرمز يدويًا.'; return; }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio:false });
+        video.srcObject = stream; await video.play(); detector = new BarcodeDetector(); scanning = true;
+        placeholder.style.display = 'none'; event.target.textContent = 'إيقاف الكاميرا'; status.textContent = 'يمسح الآن'; scan();
+      } catch (error) { status.textContent = 'اسمح بالوصول للكاميرا'; }
+    });
+    render();
+  </script>
+</body>
+</html>
